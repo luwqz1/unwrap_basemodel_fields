@@ -1,7 +1,11 @@
-from typing import Any, Dict, Generic, Optional, TypeVar, Union, get_origin
+from typing import (
+    Any, Dict, Generic, Optional,
+    TypeVar, Union, get_origin
+)
 
 from pydantic import BaseModel as OriginalBaseModel
-from pydantic import root_validator, validator
+from pydantic import root_validator
+from pydantic.json import ENCODERS_BY_TYPE
 
 T = TypeVar("T")
 V = TypeVar("V")
@@ -13,6 +17,9 @@ class Result(Generic[T]):
     
     def __init__(self, value: Optional[T] = None) -> None:
         self.__value = value
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
     def __repr__(self) -> str:
         return "Result(%s)" % repr(self.__value)
@@ -48,28 +55,24 @@ class Result(Generic[T]):
         
 
 class BaseModel(OriginalBaseModel):
-    class Config:
-        validate_all = True
-
     @root_validator(pre=True)
     @classmethod
     def validate_fields(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            field: Result() if _is_result_type(
-                cls.__annotations__.get(field, None)
+        model_schema = cls.schema()
+        fields = _get_defaults(model_schema)
+        fields.update(
+            _get_required_result_fields(
+                cls.__annotations__, model_schema
             )
-            and value is None else value
-            for field, value in values.items()
+        )
+        fields.update(values)
+        return {
+            field: Result(value) if _is_result_type(
+                cls.__annotations__.get(field, None)
+            ) and not isinstance(value, Result)
+            else value for field, value in fields.items()
         }
     
-    @validator("*", pre=True)
-    def validate_default_fields(cls, v, field):
-        if not field.required and _is_result_type(
-            cls.__annotations__.get(field.name, None)
-        ):
-            return Result(v)
-        return v
-
 
 def _is_result_type(type_: type) -> bool:
     origin_type = get_origin(type_)
@@ -83,3 +86,34 @@ def _is_result_type(type_: type) -> bool:
         )
     
     return issubclass(Result, origin_type)
+
+
+def _get_defaults(schema: Dict[str, Any]) -> Dict[str, Any]:
+    properties = schema.get("properties", {})
+    if not properties:
+        return {}
+    
+    return {
+        k: properties[k]["default"]
+        for k in properties
+        if "default" in properties[k]
+    }
+
+
+def _get_required_result_fields(
+    annotations: Dict[str, Any],
+    schema: Dict[str, Any]
+) -> Dict[str, "Result"]:
+    properties = schema.get("properties", {})
+    if not properties:
+        return {}
+
+    return {
+        k: Result() for k in properties
+        if k in schema.get("required", [])
+        or "default" not in properties[k]
+        and _is_result_type(annotations[k])
+    }
+
+
+ENCODERS_BY_TYPE[Result] = lambda v: v
