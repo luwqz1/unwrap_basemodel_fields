@@ -6,8 +6,8 @@ from pydantic import BaseModel as OriginalBaseModel
 from pydantic import root_validator
 from pydantic.json import ENCODERS_BY_TYPE
 
-_T = TypeVar("T")
-_V = TypeVar("V")
+_T = TypeVar("_T")
+_V = TypeVar("_V")
 
 
 class Result(Generic[_T]):
