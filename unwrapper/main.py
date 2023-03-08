@@ -1,13 +1,15 @@
-from typing import (
-    Any, Dict, Generic, Optional, TypeVar, Union, get_origin
-)
+from typing import (Any, Dict, Generic, Optional, Type, TypeVar, Union,
+                    get_origin)
 
 from pydantic import BaseModel as OriginalBaseModel
-from pydantic import root_validator
+from pydantic import create_model, root_validator
+from pydantic.fields import ModelField
 from pydantic.json import ENCODERS_BY_TYPE
+from pydantic.typing import is_none_type
 
 _T = TypeVar("_T")
 _V = TypeVar("_V")
+__all__ = "BaseModel", "Result"
 
 
 class Result(Generic[_T]):
@@ -21,16 +23,32 @@ class Result(Generic[_T]):
         return self.__repr__()
 
     def __repr__(self) -> str:
-        return "Result(%s)" % repr(self.__value)
+        return "%s(%s)" % (self.__class__.__name__, repr(self.__value),)
 
     @classmethod
     def __get_validators__(cls):
         yield cls.validate
 
     @classmethod
-    def validate(cls, v):
-        return v if isinstance(v, cls) else Result(v)
-    
+    def validate(cls, v: Any, field: ModelField) -> "Result[_T]":
+        result_type = field.outer_type_.__args__[0]
+        field_name = field.name
+        if field_name.startswith("_"):
+            field_name = field_name[1:]
+        if field_name.endswith("_"):
+            field_name = field_name[:-1]
+        if isinstance(v, cls):
+            if v.is_none:
+                return v
+            _model = _create_result_model(
+                field_name, v.unwrap(), result_type
+            )
+            return cls(getattr(_model, field_name))
+        if v is None:
+            return cls(v)
+        _model = _create_result_model(field_name, v, result_type)
+        return cls(getattr(_model, field_name))
+        
     @property
     def is_none(self) -> bool:
         """Return True if Result value is None."""
@@ -41,7 +59,9 @@ class Result(Generic[_T]):
         ValueError will be raised with the appropriate error_msg.
         """
         if self.__value is None:
-            raise ValueError(error_msg or "Value is None.")
+            raise ValueError(
+                error_msg if error_msg is not None else "Value is None."
+            )
         return self.__value
     
     def unwrap_or(self, variant: _V, /) -> Union[_T, _V]:
@@ -49,9 +69,9 @@ class Result(Generic[_T]):
         otherwise it will return the variant you passed.
         """
         if variant is None:
-            raise ValueError("Variant should not be type 'NoneType'.")
+            raise TypeError("Variant should not be type 'NoneType'.")
         return self.__value if self.__value is not None else variant
-        
+    
 
 class BaseModel(OriginalBaseModel):
     @root_validator(pre=True)
@@ -69,14 +89,13 @@ class BaseModel(OriginalBaseModel):
         }
     
 
-def _is_result_type(type_: Any) -> bool:
-    origin_type = get_origin(type_)
-    result_type = (
-        type(type_) if type_ is None else
-        type_ if origin_type is Union or
-        origin_type is None else origin_type
-    )
-    return issubclass(Result, result_type)
+def _is_result_type(type_: Type[Any]) -> bool:
+    if type_ is None or is_none_type(type_):
+        return False
+    origin = get_origin(type_)
+    if origin is None:
+        return False
+    return origin is Result
 
 
 def _get_defaults(schema: Dict[str, Any]) -> Dict[str, Any]:
@@ -97,6 +116,13 @@ def _get_required_result_fields(annotations: Dict[str, Any], schema: Dict[str, A
         k: Result() for k in properties if k in schema.get("required", [])
         or "default" not in properties[k] and _is_result_type(annotations[k])
     }
+
+
+def _create_result_model(field_name: str, value: Any, type_: Type[Any]) -> "BaseModel":
+    return create_model(
+        "ResultModel", __base__=BaseModel,
+        **{field_name: (type_, value,)}
+    )()
 
 
 ENCODERS_BY_TYPE[Result] = lambda v: None if v.is_none else v.unwrap()
