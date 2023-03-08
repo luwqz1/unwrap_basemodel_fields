@@ -1,6 +1,5 @@
 from typing import (Any, Dict, Generic, Optional, Type, TypeVar, Union,
                     get_origin)
-
 from pydantic import BaseModel as OriginalBaseModel
 from pydantic import create_model, root_validator
 from pydantic.fields import ModelField
