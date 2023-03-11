@@ -47,7 +47,7 @@ print(r.unwrap())
 from unwrapper import Result
 
 r = Result(input("Укажите ваше имя, либо нажмите enter, чтобы пропустить: ") or None)
-print("Привет,", r.unwrap(error_msg="Вы аноним!"), "!")
+print("Привет,", r.unwrap(error_msg="Вы аноним!") + "!")
 #> ValueError: Вы аноним!
 ```
 
