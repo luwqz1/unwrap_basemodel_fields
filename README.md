@@ -23,4 +23,4 @@ print("Hello", user.name.unwrap(error_msg="What's your name?"), "!")
 
 # :book: Documentation :book:
 * In :ru: [**Russian**](docs/RU.md) :ru:
-* In :us: [**English**](docs/EN.MD) :us:
+* In :us: [**English**](docs/EN.md) :us:
